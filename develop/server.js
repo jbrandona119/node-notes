@@ -1,60 +1,89 @@
 const express = require("express");
 const fs = require("fs");
-const path = require("path");
+const { parse } = require("querystring");
 
 const app = express();
 
-const PORT = process.env.PORT || 3000;
-
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
 app.use(express.static("public"));
 
-app.get("/", (res) => {
-  res.sendFile(path.join(__dirname, "public/index.html"));
+var PORT = process.env.PORT || 8080;
+
+app.get("/", (req, res, next) => {
+  res.status(200).sendFile(__dirname + "/public/index.html");
 });
-app.get("/notes", (res) => {
-  res.sendFile(path.join(__dirname, "public/notes.html"));
+
+app.get("/notes", (req, res, next) => {
+  res.status(200).sendFile(__dirname, "/public/notes.html");
 });
-app.get("/api/notes", (res) => {
-  fs.readFile("db/db.json", "utf8", (err, data) => {
+
+app.get("/api/notes", (req, res, next) => {
+  try {
+    fs.readFile(__dirname + "/db/db.json", "utf-8", (err, data) => {
+      if (err) {
+        throw err;
+      }
+      const jsonData = JSON.parse(data);
+      res.status(200).send(jsonData);
+    });
+  } catch (err) {
+    console.err(err);
+    res.status(404).send();
+  }
+});
+//adding new notes
+app.post("/api/notes", (req, res, next) => {
+  //parsing incoming request body
+  let body = "";
+  req
+    .on("data", (data) => {
+      body += data.toString();
+    })
+    .on("end", () => {
+      const newNote = parse(body);
+      if (Object.keys(newNote).length !== 0) {
+        fs.readFile(__dirname + "/db/db.json", "utf-8", (err, data) => {
+          if (err) {
+            throw err;
+          }
+          data = JSON.parse(data);
+          //set new notes id
+          newNote.id = data.length;
+          data.push(newNote);
+          fs.writeFile(
+            __dirname + "/db/db.json",
+            JSON.stringify(data),
+            (err) => {
+              if (err) throw err;
+              console.log("Success.");
+            }
+          );
+        });
+        res.send(newNote);
+      } else {
+        throw new Error('Something went wrong.');
+      }
+    });
+});
+//deleting notes
+app.delete('/api/notes/:id', (req, res, next) => {
+  const id = req.params.id;
+  fs.readFile(__dirname + '/db/db.json', 'utf-8', (err, notes) => {
     if (err) {
       throw err;
     }
-    return res.json(JSON.parse(data));
+    notes = JSON.parse(notes);
+    //looping through notes array to match note id with note being deleted
+    for (let i = 0; i < notes.length; i++) {
+      if (notes[i].id === parseInt(id)){
+        notes.splice(i, 1);
+      }
+    }
+    //rewriting updated notes array
+    fs.writeFile(__dirname + '/db/db.json', JSON.stringify(notes), err => {
+      if (err) throw err;
+      console.log("Success!");
+    });
   });
+  res.send("Deleted.");
 });
-app.post("/api/notes", (req, res) => {
-    let note = JSON.stringify(req.body);
-    fs.readFile("db/db.json", "utf8", (err, data) => {
-        if (err) throw err;
-        var newData = JSON.parse(data);
-        newData.push(JSON.parse(note));
-        for(let i = 0; i < newData.length; i++) {
-            newData[i].id = i + 1;
-        }
-        fs.writeFile("db/db.json", JSON.stringify(newData), (err) => {
-            if (err) throw err;
-            return res.json(JSON.parse(note));
-        });
-    });
-});
-app.delete("/api/notes/:id", (req, res) => {
-    var target = req.params.id - 1;
-    fs.readFile("db/db.json", "utf8", (err, data) => {
-        if (err) throw err;
-        var newData = JSON.parse(data);
-        newData.splice(target, 1);
-        for (let i = 0; i < newData.length; i++) {
-            newData[i].id = i + 1;
-        }
-        fs.writeFile("db/db.json", JSON.stringify(newData), (err) => {
-            if (err) throw err;
-        });
-    });
-    res.send("Note Deleted");
-});
-
-app.listen(PORT, function() {
-    console.log("App listening on PORT " + PORT);
-});
+app.listen(PORT, () => console.log(`App listening on PORT ${PORT}!`));
